@@ -1,12 +1,5 @@
 """
 A reference implementation of second-order Moller-Plesset perturbation theory.
-
-A simple Psi 4 input script to compute MP2 from a SCF reference
-Requirements scipy 0.13.0+ and numpy 1.7.2+
-
-Algorithms were taken directly from Daniel Crawford's programming website:
-http://sirius.chem.vt.edu/wiki/doku.php?id=crawdad:programming
-Special thanks to Rob Parrish for initial assistance with libmints
 """
 
 __author__ = "Daniel G. A. Smith"
@@ -23,8 +16,6 @@ import psi4
 psi4.set_memory('2 GB')
 psi4.core.set_output_file('output.dat', False)
 
-# Memory for numpy in GB
-numpy_memory = 2
 
 
 mol = psi4.geometry("""
@@ -57,13 +48,14 @@ SCF_E = wfn.energy()
 eps = np.asarray(wfn.epsilon_a())
 
 # Compute size of ERI tensor in GB
+available_memory = psi4.core.get_memory() / 1.e9
 ERI_Size = (nmo ** 4) * 8e-9
 print('Size of the ERI/MO tensor will be %4.2f GB.' % ERI_Size)
 memory_footprint = ERI_Size * 2.5
-if memory_footprint > numpy_memory:
+if memory_footprint > available_memory:
     clean()
-    raise Exception("Estimated memory utilization (%4.2f GB) exceeds numpy_memory \
-                    limit of %4.2f GB." % (memory_footprint, numpy_memory))
+    raise Exception("Estimated memory utilization (%4.2f GB) exceeds available memory \
+                    limit of %4.2f GB." % (memory_footprint, available_memory))
 
 print('Building MO integrals.')
 # Integral generation from Psi4's MintsHelper
@@ -81,11 +73,16 @@ print('\n...finished SCF and integral build in %.3f seconds.\n' % (time.time() -
 
 print('Computing MP2 energy...')
 t = time.time()
+
+# Build the energy denominator
 e_denom = 1 / (Eocc.reshape(-1, 1, 1, 1) - Evirt.reshape(-1, 1, 1) + Eocc.reshape(-1, 1) - Evirt)
 
-# Get the two spin cases
+# Compute the opposite-spin energy
 MP2corr_OS = np.einsum('iajb,iajb,iajb->', MO, MO, e_denom)
+
+# Compute the same-spin energy
 MP2corr_SS = np.einsum('iajb,iajb,iajb->', MO - MO.swapaxes(1, 3), MO, e_denom)
+
 print('...MP2 energy computed in %.3f seconds.\n' % (time.time() - t))
 
 MP2corr_E = MP2corr_SS + MP2corr_OS
